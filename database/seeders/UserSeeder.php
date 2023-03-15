@@ -38,7 +38,7 @@ class UserSeeder extends Seeder
 
         //Create company role and permission
         $company_role = Role::create(['name' => 'company']);
-        $company_role->givePermissionTo(['employee show','employee create','employee edit','employee delete']);
+        $company_role->givePermissionTo(['company show','company edit','employee show','employee create','employee edit','employee delete']);
 
         ////Create user for admin
         $admin = User::create([
@@ -46,7 +46,7 @@ class UserSeeder extends Seeder
             'email'     => 'admin@test.com',
             'password'  => Hash::make('password')
         ]);
-
+        
         $admin->assignRole($admin_role);
         //Admin permission
         $admin->givePermissionTo(Permission::all());
@@ -60,6 +60,6 @@ class UserSeeder extends Seeder
         
         $company->assignRole($company_role);
         //Company permission
-        $company->givePermissionTo(['employee show','employee create','employee edit','employee delete']);
+        $company->givePermissionTo(['company show','company edit','employee show','employee create','employee edit','employee delete']);
     }
 }

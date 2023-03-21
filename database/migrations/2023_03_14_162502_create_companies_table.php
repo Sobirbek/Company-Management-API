@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('companies', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('owner_fname');
+            $table->string('owner');
             $table->string('email')->unique();
 			$table->string('address');
 			$table->string('website');

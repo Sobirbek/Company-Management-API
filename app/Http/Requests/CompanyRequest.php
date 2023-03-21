@@ -3,8 +3,10 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
-use App\Http\Helpers\Helper;
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Validation\Rule;
+use App\Http\Helpers\Helper;
+use App\Models\Company;
 
 class CompanyRequest extends FormRequest
 {
@@ -23,18 +25,26 @@ class CompanyRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
+
+        $companyRules = [
             'name' => 'required',
-            'owner_fname' => 'required',
-            'email' => 'required|email',
+            'owner' => 'required',
+            'email' => 'required|email|unique:companies,email',
             'address' => 'required',
             'website' => 'required',
-            'phone' => 'required|regex:/^([0-9\s\-\+\(\)]*)$/|min:12',
+            'phone' => 'required|regex:/^([0-9\s\-\+\(\)]*)$/|min:12|unique:companies,phone',
         ];
+        if (request()->is('api/companies/*') && in_array(request()->method(), array('PUT', 'PATCH'))) {
+            $company = Company::where('email', request()->email)->first();
+            $companyRules['email'] = ['required', 'email', Rule::unique('companies')->ignore($company->id)];
+            $companyRules['phone'] = ['required', 'regex:/^([0-9\s\-\+\(\)]*)$/', 'min:12', Rule::unique('companies')->ignore($company->id)];
+        }
+        
+        return $companyRules;
     }
 
     public function failedValidation(Validator $validator)
     {
-        Helper::sendError('Validation error', $validator->errors()->toArray());
+        Helper::sendError('Validation error', $validator->errors()->toArray(), 422);
     }
 }

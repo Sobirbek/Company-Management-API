@@ -36,6 +36,6 @@ class EmployeeRequest extends FormRequest
 
     public function failedValidation(Validator $validator)
     {
-        Helper::sendError('Validation error', $validator->errors()->toArray());
+        Helper::sendError('Validation error', $validator->errors()->toArray(), 422);
     }
 }

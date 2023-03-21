@@ -20,10 +20,14 @@ use App\Http\Controllers\Api\EmployeeController;
 // Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 //     return $request->user();
 // });
-Route::apiResource('companies', CompanyController::class)->except(['show']);
-Route::apiResource('employees', EmployeeController::class)->except(['index', 'create', 'show', 'store']);
-Route::get('companies/{company}/employees', [EmployeeController::class, 'getEmployeesByCompanyId']);
-Route::post('companies/{company}/employees', [EmployeeController::class, 'store']);
+Route::group(['middleware' => ['auth:sanctum']], function () {
+    Route::apiResource('companies', CompanyController::class)->except(['show']);
+    Route::apiResource('employees', EmployeeController::class)->except(['index', 'create', 'show', 'store']);
+    Route::get('companies/{company}/employees', [EmployeeController::class, 'getEmployeesByCompanyId']);
+    Route::post('companies/{company}/employees', [EmployeeController::class, 'store']);
+    Route::post('logout', [AuthController::class, 'logout']);
+});
+
 
 Route::post('register', [AuthController::class, 'register']);
 Route::post('login', [AuthController::class, 'login']);

@@ -19,7 +19,7 @@ class CompanySeeder extends Seeder
         DB::table('companies')->insert([
             [
                 'name' => Str::random(10),
-                'owner_fname' => Str::random(15),
+                'owner' => Str::random(15),
                 'email' => Str::random(10).'@gmail.com',
                 'address' => Str::random(10).' street USA',
                 'website' => Str::random(5).'.com',
@@ -30,7 +30,7 @@ class CompanySeeder extends Seeder
             ],
             [
                 'name' => Str::random(10),
-                'owner_fname' => Str::random(15),
+                'owner' => Str::random(15),
                 'email' => Str::random(10).'@gmail.com',
                 'address' => Str::random(10).' street USA',
                 'website' => Str::random(5).'.com',
@@ -41,7 +41,7 @@ class CompanySeeder extends Seeder
             ],
             [
                 'name' => Str::random(10),
-                'owner_fname' => Str::random(15),
+                'owner' => Str::random(15),
                 'email' => Str::random(10).'@gmail.com',
                 'address' => Str::random(10).' street USA',
                 'website' => Str::random(5).'.com',
@@ -52,7 +52,7 @@ class CompanySeeder extends Seeder
             ],
             [
                 'name' => Str::random(10),
-                'owner_fname' => Str::random(15),
+                'owner' => Str::random(15),
                 'email' => Str::random(10).'@gmail.com',
                 'address' => Str::random(10).' street USA',
                 'website' => Str::random(5).'.com',

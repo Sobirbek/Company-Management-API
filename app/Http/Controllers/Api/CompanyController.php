@@ -3,109 +3,111 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Cache;
 use App\Http\Resources\CompanyResource;
-use App\Http\Resources\CompanyCollection;
 use App\Http\Requests\CompanyRequest;
 use App\Http\Helpers\Helper;
 use App\Models\Company;
+use App\Models\User;
+
 
 class CompanyController extends Controller
 {
+    //Check if company exists or not
+    public static function checkCompanyExist($id = 0)
+    {
+        $company = Company::find($id);
+        if (!$company) {
+            Helper::sendError(__('Company not found!'), [], 404);
+        }
+    }
+
+    //Check if current user have permission to do this action
+    protected function userCan($action = '', $company = [])
+    {
+        if (! empty($action)) {
+            $UserCan = Gate::inspect($action, $company);
+            if (!$UserCan->allowed()) {
+                Helper::sendError(__('You do not have any permission!'), [], 403);
+            }
+        }
+    }
+
     /**
-     * Display a listing of the resource.
+     * Display companies by permissions.
      */
     public function index()
     {
-        $token = request()->bearerToken();
-        $user = Helper::getUserByToken($token);
-        $data = [];
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
-        if($user->hasPermissionTo('company show')){
-            $data = $user->companies()->get();
-            if ($user->hasRole('admin')) {
-               $data = Company::all();
-            }
+        //Check current user permission
+        Helper::checkUserPermission('company show');
+        //Get all companies if current user is admin
+        if (Auth()->user()->hasRole('admin')) {
+            $companies = Cache::remember('companies', 60*60*12, function () {
+                return Company::all();
+            });
         } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
+            //Get user companies
+            $companies = Cache::remember('companies_'.Auth()->user()->id, 60*60*12, function () {
+                return Company::with('user')->where('user_id', Auth()->user()->id)->get();
+            });
+
+            if ($companies->isEmpty()) {
+                Helper::sendError(__('Companies not found!'), [], 404);
+            }
         }
 
-        return new CompanyCollection($data);
+        return CompanyResource::collection($companies);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Store new company.
      */
     public function store(CompanyRequest $request)
     {
-        $token = $request->bearerToken();
-        $user = Helper::getUserByToken($token);
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
-
-        if($user->hasPermissionTo('company create')){
-            $company_exist = Company::where([['phone', $request->input('phone')], ['user_id', $user->id ]])->first();
-            if (!empty($company_exist)) {
-                Helper::sendError(__('You entered this phone number to another company'));
-            }
-            $request->request->add(['user_id' => $user->id]);
-            $company = Company::create($request->all());
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
+        //Check current user permission
+        Helper::checkUserPermission('company create');
+        //Add current user id to request company user id
+        $request->request->add(['user_id' => Auth()->user()->id]);
+        //Create new company
+        $company = Company::create($request->all());
 
         return new CompanyResource($company);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update company.
      */
-    public function update(CompanyRequest $request, string $id)
+    public function update(CompanyRequest $request, String $id)
     {
-        $token = $request->bearerToken();
-        $user = Helper::getUserByToken($token);
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
         $company = Company::find($id);
-        if (!$company) {
-            Helper::sendError(__('Company not found!'));
-        }
-        if($user->hasPermissionTo('company edit')){
-            if ($user->id != $company->user_id && !$user->hasRole('admin')) {
-                Helper::sendError(__('You do not have the appropriate permissions!'));
-            }
-            $company->update($request->all());
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
+        //Check current user permission
+        Helper::checkUserPermission('company edit');
+        //Check if company exists
+        self::checkCompanyExist($id);
+        //Check if current user can update this company 
+        $this->userCan('update', $company);
+        //Update
+        $company->update($request->all());
+
         return new CompanyResource($company);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Delete company.
      */
     public function destroy(string $id)
     {
-        $token = request()->bearerToken();
-        $user = Helper::getUserByToken($token);
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
         $company = Company::find($id);
-        if (empty($company)) {
-            Helper::sendError(__('Company not found'));
-        }
-        if($user->hasPermissionTo('company delete')){
-            if ($user->id != $company->user_id && !$user->hasRole('admin')) {
-                Helper::sendError(__('You do not have the appropriate permissions!'));
-            }
-            $company->delete();
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
-        return response()->json(['message' => __('Company deleted!')]);
+        //Check if company exists
+        self::checkCompanyExist($id);
+        //Check current user permission
+        Helper::checkUserPermission('company delete');
+        //Check if current user can update this company 
+        $this->userCan('delete', $company);
+        //Delete
+        $company->delete();
+        
+        return response(['message' => __('Company deleted!')], 200);
     }
 }

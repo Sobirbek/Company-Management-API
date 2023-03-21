@@ -3,42 +3,49 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\CompanyController;
 use App\Http\Requests\EmployeeRequest;
 use App\Http\Resources\EmployeeResource;
-use App\Http\Resources\EmployeeCollection;
 use App\Http\Helpers\Helper;
 use App\Models\Company;
 use App\Models\Employee;
-
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Cache;
 
 class EmployeeController extends Controller
 {
+    //Check employee exist 
+    public static function checkEmployee($employee = [])
+    {
+        if (empty($employee)) {
+            Helper::sendError(__('Employee not found!'), [], 404);
+        }
+    }
+    //Check if current company user id
+    protected function checkCompanyOwner($user = [], $company = [])
+    {
+        if (!empty($user) && ! empty($user)) {
+            if ($user->id != $company->user_id && !$user->hasRole('admin')) {
+                Helper::sendError(__('You do not have the appropriate permissions!'), [], 403);
+            }
+        }
+    } 
     //Get employees by company id
     public function getEmployeesByCompanyId(string $id)
     {
-        $token = request()->bearerToken();
-        $user = Helper::getUserByToken($token);
-        $employees = [];
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
-        $company = Company::find($id);
-        if (!$company) {
-            Helper::sendError(__('Company not found!'));
-        }
+        //Check user permission
+        Helper::checkUserPermission('employee show');
+        //Check if company exists
+        CompanyController::checkCompanyExist($id);
+        //Get user companies
+        $employees = Cache::remember('employees_'.$id, 60*60*12, function () use ($id) {
+            return Employee::with('company')->where('company_id', $id)->get();
+        });
 
-        if ($user->id != $company->user_id && !$user->hasRole('admin')) {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
+        if ($employees->isEmpty()) {
+            Helper::sendError(__('Employees not found!'), [], 404);
         }
-        if($user->hasPermissionTo('employee show')){
-            $employees = $company->employees()->get();
-            if ($employees->isEmpty()) {
-                Helper::sendError(__('Employees not found'));
-            }
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
-        return new EmployeeCollection($employees);
+        return EmployeeResource::collection($employees);
     }
 
     //Validate Passport pin number
@@ -55,129 +62,130 @@ class EmployeeController extends Controller
                     $validPassportPin = $uppercaseLetter.$passportNumber;
                 }
             }
-            
         }
         return $validPassportPin;
     }
 
+    //Check passport pin by company
+    public function checkEmployeeDataByCompany($data = [], $key = 'passport_pin')
+    {
+        if (!empty($data)) {
+            //Check if passport pin exists or not
+            if ($key == 'passport_pin') {
+                $checkPassport = Employee::where([['passport_pin', $data['passport_pin']], ['company_id', $data['companyId'] ]])->first();
+                if (!empty($checkPassport)) {
+                    if (in_array($data['method'], array('PUT','PATCH'))) {
+                        if ($checkPassport->id != $data['requestId']) {
+                            Helper::sendError(__('The passport pin exists in your employee!'), [], 422);
+                        }
+                    } else {
+                        Helper::sendError(__('The passport pin exists in your employee!'), [], 422);
+                    }
+                }
+                //Check passport pin valid format
+                $validPassportPin = $this->validatePassportPin($data['passport_pin']);
+                if (empty($validPassportPin)) {
+                    Helper::sendError(__('The Passport pin is invalid!'), [], 422);
+                }
+            }
+            //Check if phone exists or not
+            if ($key == 'phone_exists') {
+                $checkPhone = Employee::where([['phone', $data['phone']], ['company_id', $data['companyId']]])->first();
+                if (!empty($checkPhone)) {
+                    if (in_array($data['method'], array('PUT','PATCH'))) {
+                        if ($checkPhone->id != $data['requestId']) {
+                            Helper::sendError(__('The phone exists in your employee!'), [], 422);
+                        }
+                    } else {
+                        Helper::sendError(__('The phone exists in your employee!'), [], 422);
+                    }
+                }
+            }
+
+        }
+    }
+
     /**
-     * Store a newly created resource in storage.
+     * Store new employee.
      */
     public function store(EmployeeRequest $request, String $id)
     {
-        $token = request()->bearerToken();
-        $user = Helper::getUserByToken($token);
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
+        //Check if company exists
+        CompanyController::checkCompanyExist($id);
         $company = Company::find($id);
-        if (!$company) {
-            Helper::sendError(__('Company not found!'));
-        }
+        //Check user permission
+        Helper::checkUserPermission('employee create');
+        //Check if current user is company owner
+        $this->checkCompanyOwner(Auth()->user(), $company);
+        $data = [
+            'method' => 'POST',
+            'passport_pin' => $request->passport_pin,
+            'companyId' => $company->id,
+            'phone' => $request->phone
+        ];
+        //Check passport pin exists and valid format in your employee
+        $this->checkEmployeeDataByCompany($data);
+        //Check phone exists in your employee
+        $this->checkEmployeeDataByCompany($data, 'phone_exists');
+        //Replace passport pin in valid format
+        $request->replace(['passport_pin' => $this->validatePassportPin($request->passport_pin)]);
+        //Add company id
+        $request->request->add(['company_id' => $company->id]);
+        //Create new employee
+        $employee = Employee::create($request->all());
 
-        if ($user->id != $company->user_id && !$user->hasRole('admin')) {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
-
-        if($user->hasPermissionTo('employee create')){
-            $checkPassport = Employee::where([['passport_pin', $request->input('passport_pin')], ['company_id', $company->id ]])->get();
-            if (count($checkPassport) > 0) {
-                Helper::sendError(__('The passport pin exists in your employee!'));
-            }
-
-            $validPassportPin = $this->validatePassportPin($request->input('passport_pin'));
-            if (empty($validPassportPin)) {
-                Helper::sendError(__('The Passport pin in invalid!'));
-            }
-            $request->replace(['passport_pin' => $validPassportPin]);
-            
-            $checkPhone = Employee::where([['phone', $request->input('phone')], ['company_id', $company->id ]])->get();
-            if (count($checkPhone) > 0) {
-                Helper::sendError(__('The phone number exists in your employee!'));
-            }
-
-            $request->request->add(['company_id' => $company->id]);
-            $employee = Employee::create($request->all());
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
         return new EmployeeResource($employee);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update employee.
      */
     public function update(EmployeeRequest $request, string $id)
     {
-        $token = request()->bearerToken();
-        $user = Helper::getUserByToken($token);
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
+        //Check user permission
+        Helper::checkUserPermission('employee edit');
         $employee = Employee::find($id);
-        if (empty($employee)) {
-            Helper::sendError(__('Employee not found!'));
-        }
+        //Check employee exists or not
+        $this->checkEmployee($employee);
+        //Get company by employee id
         $company = Company::find($employee->company_id);
-        if ($company->user_id != $user->id && !$user->hasRole('admin') ) {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
-
-        if($user->hasPermissionTo('company create')){
-            $checkPassport = Employee::where([['passport_pin', $request->input('passport_pin')], ['company_id', $company->id ]])->first();
-            if (! empty($checkPassport)) {
-                if ($checkPassport->id != $employee->id) {
-                    Helper::sendError(__('The passport pin exists in your employee!'));
-                }
-            }
-
-            $validPassportPin = $this->validatePassportPin($request->input('passport_pin'));
-            if (empty($validPassportPin)) {
-                Helper::sendError(__('The Passport pin in invalid!'));
-            }
-
-            $request->replace(['passport_pin' => $validPassportPin]);
-
-            $checkPhone = Employee::where([['phone', $request->input('phone')], ['company_id', $company->id ]])->first();
-            if (! empty($checkPhone)) {
-                if ($checkPhone->id != $employee->id) {
-                    Helper::sendError(__('The phone number exists in your employee!'));
-                }
-            }
-            $request->request->add(['company_id' => $company->id]);
-            $employee->update($request->all());
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
+        //Check if current user is company owner
+        $this->checkCompanyOwner(Auth()->user(), $company);
+        $data = [
+            'method' => 'PUT',
+            'requestId' => $employee->id,
+            'passport_pin' => $request->passport_pin,
+            'companyId' => $company->id,
+            'phone' => $request->phone
+        ];
+        //Check passport pin exists and valid format in your employee
+        $this->checkEmployeeDataByCompany($data);
+        //Check phone exists in your employee
+        $this->checkEmployeeDataByCompany($data, 'phone_exists');
+        //Replace passport pin valid format
+        $request->replace(['passport_pin' => $this->validatePassportPin($request->passport_pin)]);
+        //Update data
+        $employee->update($request->all());
         return new EmployeeResource($employee);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Delete employee.
      */
     public function destroy(string $id)
     {
-        $token = request()->bearerToken();
-        $user = Helper::getUserByToken($token);
-        if (empty($user)) {
-            Helper::sendError(__('Token is invalid!'));
-        }
-
+        //Check user permission
+        Helper::checkUserPermission('employee delete');
         $employee = Employee::find($id);
-        if (empty($employee)) {
-            Helper::sendError(__('Employee not found'));
-        }
-
+        //Check employee exists or not
+        $this->checkEmployee($employee);
+        //Get company by employee id
         $company = Company::find($employee->company_id);
-        if ($company->user_id != $user->id && !$user->hasRole('admin') ) {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
+        //Check if current user is company owner
+        $this->checkCompanyOwner(Auth()->user(), $company);
+        //Delete employee 
+        $employee->delete();
 
-        if($user->hasPermissionTo('employee delete')){
-            $employee->delete();
-        } else {
-            Helper::sendError(__('You do not have the appropriate permissions!'));
-        }
-        return response()->json(['message' => __('Employee deleted!')]); 
+        return response(['message' => __('Employee deleted!')], 200); 
     }
 }

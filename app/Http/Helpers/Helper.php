@@ -15,16 +15,10 @@ class Helper{
         throw new HttpResponseException(response()->json($response, $code)); 
     }
 
-    public static function getUserByToken($token = '')
+    public static function checkUserPermission($permission = '')
     {
-        $user = [];
-        if (!empty($token)) {
-            $checkToken = PersonalAccessToken::findToken($token);
-            if ($checkToken) {
-                $user = $checkToken->tokenable;
-            }
+        if(! empty($permission) && !Auth()->user()->hasPermissionTo($permission)){
+            self::sendError(__('You do not have the appropriate permissions!'), [], 403);
         }
-
-        return $user;
     }
 }
